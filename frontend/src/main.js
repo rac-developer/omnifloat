@@ -100,6 +100,17 @@ document.addEventListener("DOMContentLoaded", async () => {
     focusSearchInput();
   });
 
+  // Keep searchInput permanently focused whenever settings modal is closed
+  searchInput.addEventListener("blur", () => {
+    if (!settingsModal || !settingsModal.classList.contains("active")) {
+      setTimeout(() => {
+        if (!settingsModal || !settingsModal.classList.contains("active")) {
+          focusSearchInput();
+        }
+      }, 10);
+    }
+  });
+
   // 2. Global keyboard handlers (navigation, focus, shortcuts)
   window.addEventListener("keydown", (e) => {
     // Ctrl + , opens settings

@@ -202,21 +202,27 @@ func (a *App) domReady(ctx context.Context) {
 		a.mu.Unlock()
 
 		a.CenterLauncher()
-		wailsRuntime.WindowShow(ctx)
-		wailsRuntime.WindowUnminimise(ctx)
 		wailsRuntime.WindowSetAlwaysOnTop(ctx, true)
+		wailsRuntime.WindowShow(ctx)
 		system.ForceForegroundWindow("OmniFloat")
 		wailsRuntime.EventsEmit(ctx, "launcher:opened")
 		go func() {
-			time.Sleep(45 * time.Millisecond)
+			time.Sleep(50 * time.Millisecond)
 			system.ForceForegroundWindow("OmniFloat")
 			wailsRuntime.EventsEmit(ctx, "launcher:focus_input")
 			if uri, ok := a.backdrop.CaptureBehind("OmniFloat", true); ok && uri != "" {
 				wailsRuntime.EventsEmit(ctx, "backdrop:updated", uri)
 			}
-			time.Sleep(80 * time.Millisecond)
-			system.ForceForegroundWindow("OmniFloat")
-			wailsRuntime.EventsEmit(ctx, "launcher:focus_input")
+			for _, delay := range []time.Duration{150 * time.Millisecond, 300 * time.Millisecond, 450 * time.Millisecond} {
+				time.Sleep(delay)
+				a.mu.Lock()
+				vis := a.isVisible
+				a.mu.Unlock()
+				if vis {
+					system.ForceForegroundWindow("OmniFloat")
+					wailsRuntime.EventsEmit(ctx, "launcher:focus_input")
+				}
+			}
 		}()
 	}
 }
@@ -465,14 +471,13 @@ func (a *App) ToggleLauncher() {
 	} else {
 		a.lastShownAt = time.Now()
 		a.CenterLauncher()
-		wailsRuntime.WindowShow(a.ctx)
-		wailsRuntime.WindowUnminimise(a.ctx)
 		wailsRuntime.WindowSetAlwaysOnTop(a.ctx, true)
+		wailsRuntime.WindowShow(a.ctx)
 		a.isVisible = true
 		system.ForceForegroundWindow("OmniFloat")
 		wailsRuntime.EventsEmit(a.ctx, "launcher:opened")
 		go func() {
-			time.Sleep(40 * time.Millisecond)
+			time.Sleep(45 * time.Millisecond)
 			system.ForceForegroundWindow("OmniFloat")
 			if a.ctx != nil {
 				wailsRuntime.EventsEmit(a.ctx, "launcher:focus_input")
@@ -480,7 +485,7 @@ func (a *App) ToggleLauncher() {
 					wailsRuntime.EventsEmit(a.ctx, "backdrop:updated", uri)
 				}
 			}
-			time.Sleep(80 * time.Millisecond)
+			time.Sleep(110 * time.Millisecond)
 			system.ForceForegroundWindow("OmniFloat")
 			if a.ctx != nil {
 				wailsRuntime.EventsEmit(a.ctx, "launcher:focus_input")
@@ -506,14 +511,13 @@ func (a *App) ShowLauncher() {
 
 	a.lastShownAt = time.Now()
 	a.CenterLauncher()
-	wailsRuntime.WindowShow(a.ctx)
-	wailsRuntime.WindowUnminimise(a.ctx)
 	wailsRuntime.WindowSetAlwaysOnTop(a.ctx, true)
+	wailsRuntime.WindowShow(a.ctx)
 	a.isVisible = true
 	system.ForceForegroundWindow("OmniFloat")
 	wailsRuntime.EventsEmit(a.ctx, "launcher:opened")
 	go func() {
-		time.Sleep(40 * time.Millisecond)
+		time.Sleep(45 * time.Millisecond)
 		system.ForceForegroundWindow("OmniFloat")
 		if a.ctx != nil {
 			wailsRuntime.EventsEmit(a.ctx, "launcher:focus_input")
@@ -521,7 +525,7 @@ func (a *App) ShowLauncher() {
 				wailsRuntime.EventsEmit(a.ctx, "backdrop:updated", uri)
 			}
 		}
-		time.Sleep(80 * time.Millisecond)
+		time.Sleep(110 * time.Millisecond)
 		system.ForceForegroundWindow("OmniFloat")
 		if a.ctx != nil {
 			wailsRuntime.EventsEmit(a.ctx, "launcher:focus_input")

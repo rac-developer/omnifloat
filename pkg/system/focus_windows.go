@@ -13,6 +13,7 @@ var (
 	procSetForegroundWindow             = user32.NewProc("SetForegroundWindow")
 	procSetActiveWindow                 = user32.NewProc("SetActiveWindow")
 	procSetFocus                        = user32.NewProc("SetFocus")
+	procSendMessageW                    = user32.NewProc("SendMessageW")
 	procGetWindow                       = user32.NewProc("GetWindow")
 	procKeybdEvent                      = user32.NewProc("keybd_event")
 	procBringWindowToTop                = user32.NewProc("BringWindowToTop")
@@ -132,16 +133,14 @@ func ensureToolWindowStyle(hwnd uintptr, keepVisible bool) {
 	// Strip WS_CAPTION and WS_SYSMENU so Windows never renders the non-functional "X" button
 	style, _, _ := procGetWindowLongW.Call(hwnd, gwlStyle)
 	captionBits := uintptr(wsCaption | wsSysMenu | wsMinimizeBox | wsMaximizeBox | wsThickFrame)
+	styleChanged := false
 	if (style & captionBits) != 0 {
 		_, _, _ = procSetWindowLongW.Call(hwnd, gwlStyle, style&^captionBits)
+		styleChanged = true
 	}
 
 	exStyle, _, _ := procGetWindowLongW.Call(hwnd, gwlExStyle)
 	if (exStyle&wsExToolWindow) == 0 || (exStyle&wsExAppWindow) != 0 {
-		vis, _, _ := procIsWindowVisible.Call(hwnd)
-		if vis != 0 {
-			_, _, _ = procShowWindow.Call(hwnd, swHide)
-		}
 		newStyle := (exStyle &^ wsExAppWindow) | wsExToolWindow
 		_, _, _ = procSetWindowLongW.Call(hwnd, gwlExStyle, newStyle)
 		_, _, _ = procSetWindowPos.Call(
@@ -150,10 +149,7 @@ func ensureToolWindowStyle(hwnd uintptr, keepVisible bool) {
 			uintptr(swpNoMove|swpNoSize|swpNoZOrder|swpNoActivate|swpFrameChanged),
 		)
 		applyDwmGlassAttributes(hwnd)
-		if vis != 0 || keepVisible {
-			_, _, _ = procShowWindow.Call(hwnd, swShowNoActivate)
-		}
-	} else {
+	} else if styleChanged {
 		applyDwmGlassAttributes(hwnd)
 	}
 }
@@ -182,8 +178,8 @@ func isKeyDown(vk int) bool {
 	return (uint16(ret) & 0x8000) != 0
 }
 
-// ForceForegroundWindow brings the specified window to the front and grants it keyboard focus,
-// including focusing the embedded WebView2 child control so the input is ready immediately.
+// ForceForegroundWindow brings the specified window to the front as the active foreground window
+// and triggers Wails' WM_SETFOCUS handler (chromium.Focus) so the WebView2 input stays focused.
 func ForceForegroundWindow(windowTitle string) {
 	hwnd := findWindowByTitle(windowTitle)
 	if hwnd == 0 {
@@ -225,28 +221,10 @@ func ForceForegroundWindow(windowTitle string) {
 
 	_, _, _ = procBringWindowToTop.Call(hwnd)
 	_, _, _ = procSetForegroundWindow.Call(hwnd)
-	_, _, _ = procSetActiveWindow.Call(hwnd)
-	_, _, _ = procSetFocus.Call(hwnd)
 
-	// Walk down into WebView2 child windows (Chrome_WidgetWin_0 / Chrome_WidgetWin_1)
-	// and grant keyboard focus directly to the deepest child control.
-	const gwChild = 5
-	child := hwnd
-	for depth := 0; depth < 5; depth++ {
-		next, _, _ := procGetWindow.Call(child, uintptr(gwChild))
-		if next == 0 {
-			break
-		}
-		child = next
-		childThread, _, _ := procGetWindowThreadProcessId.Call(child, 0)
-		if childThread != 0 && childThread != curThread {
-			_, _, _ = procAttachThreadInput.Call(curThread, childThread, 1)
-			_, _, _ = procSetFocus.Call(child)
-			_, _, _ = procAttachThreadInput.Call(curThread, childThread, 0)
-		} else {
-			_, _, _ = procSetFocus.Call(child)
-		}
-	}
+	// Trigger Wails' mainWindow.OnSetFocus() -> f.chromium.Focus() synchronously on the UI thread
+	const wmSetFocus = 0x0007
+	_, _, _ = procSendMessageW.Call(hwnd, uintptr(wmSetFocus), 0, 0)
 }
 
 // PinTopMostWindow positions and sizes a window at exact screen coordinates as always-on-top
