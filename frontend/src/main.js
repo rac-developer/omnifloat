@@ -64,8 +64,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   let currentExpression = "";
   let updateDownloadURL = "";
 
-  function focusSearchInput() {
+  let isReFocusing = false;
+  function focusSearchInput(forceReset = false) {
     if (settingsModal && settingsModal.classList.contains("active")) return;
+    if (forceReset && document.activeElement === searchInput) {
+      isReFocusing = true;
+      searchInput.blur();
+      isReFocusing = false;
+    }
     searchInput.focus();
     const len = searchInput.value.length;
     try {
@@ -91,21 +97,27 @@ document.addEventListener("DOMContentLoaded", async () => {
   } catch (_) {}
   collectActiveItems();
   updateHighlight();
-  focusSearchInput();
-  setTimeout(focusSearchInput, 45);
-  setTimeout(focusSearchInput, 120);
-  setTimeout(focusSearchInput, 250);
+  focusSearchInput(true);
+  setTimeout(() => focusSearchInput(true), 60);
+  setTimeout(() => focusSearchInput(true), 150);
 
   window.addEventListener("focus", () => {
-    focusSearchInput();
+    focusSearchInput(true);
+  });
+
+  window.addEventListener("keyup", (e) => {
+    if (e.key === "Alt" || e.key === " " || e.code === "Space") {
+      focusSearchInput(true);
+    }
   });
 
   // Keep searchInput permanently focused whenever settings modal is closed
   searchInput.addEventListener("blur", () => {
+    if (isReFocusing) return;
     if (!settingsModal || !settingsModal.classList.contains("active")) {
       setTimeout(() => {
         if (!settingsModal || !settingsModal.classList.contains("active")) {
-          focusSearchInput();
+          focusSearchInput(false);
         }
       }, 10);
     }
@@ -210,13 +222,13 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
       collectActiveItems();
       updateHighlight();
-      focusSearchInput();
-      setTimeout(focusSearchInput, 45);
-      setTimeout(focusSearchInput, 120);
+      focusSearchInput(true);
+      setTimeout(() => focusSearchInput(true), 60);
+      setTimeout(() => focusSearchInput(true), 150);
     });
 
     window.runtime.EventsOn("launcher:focus_input", () => {
-      focusSearchInput();
+      focusSearchInput(true);
     });
 
     // Tray "Settings..." menu item event

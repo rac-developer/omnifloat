@@ -14,7 +14,9 @@ var (
 	procSetActiveWindow                 = user32.NewProc("SetActiveWindow")
 	procSetFocus                        = user32.NewProc("SetFocus")
 	procSendMessageW                    = user32.NewProc("SendMessageW")
+	procPostMessageW                    = user32.NewProc("PostMessageW")
 	procGetWindow                       = user32.NewProc("GetWindow")
+	procGetClassNameW                   = user32.NewProc("GetClassNameW")
 	procKeybdEvent                      = user32.NewProc("keybd_event")
 	procBringWindowToTop                = user32.NewProc("BringWindowToTop")
 	procShowWindow               = user32.NewProc("ShowWindow")
@@ -178,10 +180,50 @@ func isKeyDown(vk int) bool {
 	return (uint16(ret) & 0x8000) != 0
 }
 
-// ForceForegroundWindow brings the specified window to the front as the active foreground window
-// and triggers Wails' WM_SETFOCUS handler (chromium.Focus) so the WebView2 input stays focused.
-func ForceForegroundWindow(windowTitle string) {
-	hwnd := findWindowByTitle(windowTitle)
+func getWindowClassName(hwnd uintptr) string {
+	if hwnd == 0 {
+		return ""
+	}
+	var buf [128]uint16
+	n, _, _ := procGetClassNameW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	if n == 0 {
+		return ""
+	}
+	return syscall.UTF16ToString(buf[:n])
+}
+
+// findChromeWidgetChild locates WebView2's keyboard input receiver ("Chrome_WidgetWin_1")
+// without descending into "Intermediate D3D Window" (which would unfocus the input).
+func findChromeWidgetChild(hwnd uintptr) uintptr {
+	const (
+		gwChild    = 5
+		gwHwndNext = 2
+	)
+	var fallback uintptr
+	queue := []uintptr{hwnd}
+	for len(queue) > 0 && len(queue) < 32 {
+		curr := queue[0]
+		queue = queue[1:]
+
+		child, _, _ := procGetWindow.Call(curr, uintptr(gwChild))
+		for child != 0 {
+			cls := getWindowClassName(child)
+			if cls == "Chrome_WidgetWin_1" {
+				return child
+			}
+			if cls == "Chrome_WidgetWin_0" && fallback == 0 {
+				fallback = child
+			}
+			if cls != "Intermediate D3D Window" {
+				queue = append(queue, child)
+			}
+			child, _, _ = procGetWindow.Call(child, uintptr(gwHwndNext))
+		}
+	}
+	return fallback
+}
+
+func focusLauncherHwnd(hwnd uintptr, clickInput bool) {
 	if hwnd == 0 {
 		return
 	}
@@ -221,10 +263,68 @@ func ForceForegroundWindow(windowTitle string) {
 
 	_, _, _ = procBringWindowToTop.Call(hwnd)
 	_, _, _ = procSetForegroundWindow.Call(hwnd)
+	_, _, _ = procSetActiveWindow.Call(hwnd)
 
-	// Trigger Wails' mainWindow.OnSetFocus() -> f.chromium.Focus() synchronously on the UI thread
+	// Trigger Wails' mainWindow.OnSetFocus() -> f.chromium.Focus()
 	const wmSetFocus = 0x0007
 	_, _, _ = procSendMessageW.Call(hwnd, uintptr(wmSetFocus), 0, 0)
+
+	// Focus WebView2's Chrome_WidgetWin_1 child window directly and send a synthetic
+	// client click at (260, 68) — the center of #search-input — without moving the mouse.
+	chromeHwnd := findChromeWidgetChild(hwnd)
+	if chromeHwnd != 0 {
+		chromeThread, _, _ := procGetWindowThreadProcessId.Call(chromeHwnd, 0)
+		if chromeThread != 0 && chromeThread != curThread {
+			_, _, _ = procAttachThreadInput.Call(curThread, chromeThread, 1)
+			defer procAttachThreadInput.Call(curThread, chromeThread, 0)
+		}
+		if chromeThread != 0 && chromeThread != winThread {
+			_, _, _ = procAttachThreadInput.Call(winThread, chromeThread, 1)
+			defer procAttachThreadInput.Call(winThread, chromeThread, 0)
+		}
+		_, _, _ = procSetFocus.Call(chromeHwnd)
+
+		if clickInput {
+			const (
+				wmLButtonDown = 0x0201
+				wmLButtonUp   = 0x0202
+				mkLButton     = 0x0001
+			)
+			// Coordinates (x=260, y=68) lie directly inside #search-input
+			lParam := uintptr((68 << 16) | 260)
+			_, _, _ = procPostMessageW.Call(chromeHwnd, uintptr(wmLButtonDown), uintptr(mkLButton), lParam)
+			_, _, _ = procPostMessageW.Call(chromeHwnd, uintptr(wmLButtonUp), 0, lParam)
+		}
+	}
+}
+
+// ForceForegroundWindow brings the specified window to the front as the active foreground window
+// and focuses WebView2's Chrome_WidgetWin_1 + #search-input immediately (and after Alt release).
+func ForceForegroundWindow(windowTitle string) {
+	hwnd := findWindowByTitle(windowTitle)
+	if hwnd == 0 {
+		return
+	}
+
+	focusLauncherHwnd(hwnd, true)
+
+	// If the user opened the launcher via Alt+Space, the Alt key (VK_MENU = 0x12) may still
+	// be physically held down; releasing Alt sends WM_SYSKEYUP which can steal focus from
+	// Chromium's input. Wait for Alt release and re-focus immediately.
+	const vkMenu = 0x12
+	if isKeyDown(vkMenu) {
+		go func() {
+			deadline := time.Now().Add(800 * time.Millisecond)
+			for time.Now().Before(deadline) {
+				if !isKeyDown(vkMenu) {
+					time.Sleep(15 * time.Millisecond)
+					focusLauncherHwnd(hwnd, true)
+					return
+				}
+				time.Sleep(15 * time.Millisecond)
+			}
+		}()
+	}
 }
 
 // PinTopMostWindow positions and sizes a window at exact screen coordinates as always-on-top
