@@ -64,6 +64,15 @@ document.addEventListener("DOMContentLoaded", async () => {
   let currentExpression = "";
   let updateDownloadURL = "";
 
+  function focusSearchInput() {
+    if (settingsModal && settingsModal.classList.contains("active")) return;
+    searchInput.focus();
+    const len = searchInput.value.length;
+    try {
+      searchInput.setSelectionRange(len, len);
+    } catch (_) {}
+  }
+
   // 1. Load initial configuration, history, and restore any saved search input
   await loadConfiguration();
   await loadHistory();
@@ -80,9 +89,18 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     }
   } catch (_) {}
-  searchInput.focus();
+  collectActiveItems();
+  updateHighlight();
+  focusSearchInput();
+  setTimeout(focusSearchInput, 45);
+  setTimeout(focusSearchInput, 120);
+  setTimeout(focusSearchInput, 250);
 
-  // 2. Global keyboard handlers (outside click & focus loss is handled natively by Go WatchClickOutside)
+  window.addEventListener("focus", () => {
+    focusSearchInput();
+  });
+
+  // 2. Global keyboard handlers (navigation, focus, shortcuts)
   window.addEventListener("keydown", (e) => {
     // Ctrl + , opens settings
     if (e.ctrlKey && e.key === ",") {
@@ -98,6 +116,55 @@ document.addEventListener("DOMContentLoaded", async () => {
       } else {
         hideLauncher();
       }
+      return;
+    }
+
+    // When settings panel is open, do not intercept arrow keys or typing
+    if (settingsModal.classList.contains("active")) {
+      return;
+    }
+
+    // Global ArrowDown / ArrowUp / Enter navigation across active options
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      focusSearchInput();
+      collectActiveItems();
+      if (activeItems.length > 0) {
+        selectedIndex = (selectedIndex + 1) % activeItems.length;
+        updateHighlight();
+      }
+      return;
+    }
+
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      focusSearchInput();
+      collectActiveItems();
+      if (activeItems.length > 0) {
+        selectedIndex = (selectedIndex - 1 + activeItems.length) % activeItems.length;
+        updateHighlight();
+      }
+      return;
+    }
+
+    if (e.key === "Enter") {
+      e.preventDefault();
+      collectActiveItems();
+      if (activeItems.length > 0) {
+        executeCurrentSelection();
+      }
+      return;
+    }
+
+    // Redirect any direct typing or Backspace to the search input automatically
+    if (
+      document.activeElement !== searchInput &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      !e.metaKey &&
+      (e.key.length === 1 || e.key === "Backspace" || e.key === "Delete")
+    ) {
+      focusSearchInput();
     }
   });
 
@@ -116,6 +183,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     // Launcher opened event (Alt+Space or Tray) — preserve existing input text!
     window.runtime.EventsOn("launcher:opened", async () => {
       closeSettings();
+      focusSearchInput();
       const query = searchInput.value.trim();
       if (query === "") {
         hideMathCard();
@@ -129,9 +197,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
         await performAppSearch(query);
       }
-      searchInput.focus();
-      const len = searchInput.value.length;
-      searchInput.setSelectionRange(len, len);
+      collectActiveItems();
+      updateHighlight();
+      focusSearchInput();
+      setTimeout(focusSearchInput, 45);
+      setTimeout(focusSearchInput, 120);
+    });
+
+    window.runtime.EventsOn("launcher:focus_input", () => {
+      focusSearchInput();
     });
 
     // Tray "Settings..." menu item event
@@ -181,25 +255,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       // Search apps and tools
       await performAppSearch(query);
     }, 40);
-  });
-
-  // 6. Keyboard navigation (Arrow keys + Enter)
-  searchInput.addEventListener("keydown", (e) => {
-    collectActiveItems();
-    if (activeItems.length === 0) return;
-
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      selectedIndex = (selectedIndex + 1) % activeItems.length;
-      updateHighlight();
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      selectedIndex = (selectedIndex - 1 + activeItems.length) % activeItems.length;
-      updateHighlight();
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      executeCurrentSelection();
-    }
   });
 
   // 7. Math Card click execution
@@ -343,6 +398,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     historyList.innerHTML = "";
     if (!items || items.length === 0) {
       historySection.style.display = "none";
+      collectActiveItems();
+      updateHighlight();
       return;
     }
 
@@ -376,6 +433,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
 
     collectActiveItems();
+    updateHighlight();
   }
 
   function collectActiveItems() {

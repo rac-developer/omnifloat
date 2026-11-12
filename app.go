@@ -205,14 +205,19 @@ func (a *App) domReady(ctx context.Context) {
 		wailsRuntime.WindowShow(ctx)
 		wailsRuntime.WindowUnminimise(ctx)
 		wailsRuntime.WindowSetAlwaysOnTop(ctx, true)
+		system.ForceForegroundWindow("OmniFloat")
+		wailsRuntime.EventsEmit(ctx, "launcher:opened")
 		go func() {
-			time.Sleep(60 * time.Millisecond)
+			time.Sleep(45 * time.Millisecond)
 			system.ForceForegroundWindow("OmniFloat")
+			wailsRuntime.EventsEmit(ctx, "launcher:focus_input")
 			if uri, ok := a.backdrop.CaptureBehind("OmniFloat", true); ok && uri != "" {
 				wailsRuntime.EventsEmit(ctx, "backdrop:updated", uri)
 			}
+			time.Sleep(80 * time.Millisecond)
+			system.ForceForegroundWindow("OmniFloat")
+			wailsRuntime.EventsEmit(ctx, "launcher:focus_input")
 		}()
-		wailsRuntime.EventsEmit(ctx, "launcher:opened")
 	}
 }
 
@@ -464,16 +469,23 @@ func (a *App) ToggleLauncher() {
 		wailsRuntime.WindowUnminimise(a.ctx)
 		wailsRuntime.WindowSetAlwaysOnTop(a.ctx, true)
 		a.isVisible = true
+		system.ForceForegroundWindow("OmniFloat")
+		wailsRuntime.EventsEmit(a.ctx, "launcher:opened")
 		go func() {
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(40 * time.Millisecond)
 			system.ForceForegroundWindow("OmniFloat")
 			if a.ctx != nil {
+				wailsRuntime.EventsEmit(a.ctx, "launcher:focus_input")
 				if uri, ok := a.backdrop.CaptureBehind("OmniFloat", true); ok && uri != "" {
 					wailsRuntime.EventsEmit(a.ctx, "backdrop:updated", uri)
 				}
 			}
+			time.Sleep(80 * time.Millisecond)
+			system.ForceForegroundWindow("OmniFloat")
+			if a.ctx != nil {
+				wailsRuntime.EventsEmit(a.ctx, "launcher:focus_input")
+			}
 		}()
-		wailsRuntime.EventsEmit(a.ctx, "launcher:opened")
 	}
 }
 
@@ -498,16 +510,23 @@ func (a *App) ShowLauncher() {
 	wailsRuntime.WindowUnminimise(a.ctx)
 	wailsRuntime.WindowSetAlwaysOnTop(a.ctx, true)
 	a.isVisible = true
+	system.ForceForegroundWindow("OmniFloat")
+	wailsRuntime.EventsEmit(a.ctx, "launcher:opened")
 	go func() {
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(40 * time.Millisecond)
 		system.ForceForegroundWindow("OmniFloat")
 		if a.ctx != nil {
+			wailsRuntime.EventsEmit(a.ctx, "launcher:focus_input")
 			if uri, ok := a.backdrop.CaptureBehind("OmniFloat", true); ok && uri != "" {
 				wailsRuntime.EventsEmit(a.ctx, "backdrop:updated", uri)
 			}
 		}
+		time.Sleep(80 * time.Millisecond)
+		system.ForceForegroundWindow("OmniFloat")
+		if a.ctx != nil {
+			wailsRuntime.EventsEmit(a.ctx, "launcher:focus_input")
+		}
 	}()
-	wailsRuntime.EventsEmit(a.ctx, "launcher:opened")
 }
 
 // HideLauncher hides the launcher window to background.

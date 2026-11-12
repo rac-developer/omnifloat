@@ -9,9 +9,13 @@ import (
 )
 
 var (
-	procGetForegroundWindow      = user32.NewProc("GetForegroundWindow")
-	procSetForegroundWindow      = user32.NewProc("SetForegroundWindow")
-	procBringWindowToTop         = user32.NewProc("BringWindowToTop")
+	procGetForegroundWindow             = user32.NewProc("GetForegroundWindow")
+	procSetForegroundWindow             = user32.NewProc("SetForegroundWindow")
+	procSetActiveWindow                 = user32.NewProc("SetActiveWindow")
+	procSetFocus                        = user32.NewProc("SetFocus")
+	procGetWindow                       = user32.NewProc("GetWindow")
+	procKeybdEvent                      = user32.NewProc("keybd_event")
+	procBringWindowToTop                = user32.NewProc("BringWindowToTop")
 	procShowWindow               = user32.NewProc("ShowWindow")
 	procSetWindowPos             = user32.NewProc("SetWindowPos")
 	procFindWindowW              = user32.NewProc("FindWindowW")
@@ -178,7 +182,8 @@ func isKeyDown(vk int) bool {
 	return (uint16(ret) & 0x8000) != 0
 }
 
-// ForceForegroundWindow brings the specified window to the front and grants it keyboard focus.
+// ForceForegroundWindow brings the specified window to the front and grants it keyboard focus,
+// including focusing the embedded WebView2 child control so the input is ready immediately.
 func ForceForegroundWindow(windowTitle string) {
 	hwnd := findWindowByTitle(windowTitle)
 	if hwnd == 0 {
@@ -192,12 +197,24 @@ func ForceForegroundWindow(windowTitle string) {
 	if fgHwnd != 0 {
 		fgThread, _, _ = procGetWindowThreadProcessId.Call(fgHwnd, 0)
 	}
+	winThread, _, _ := procGetWindowThreadProcessId.Call(hwnd, 0)
 	curThread, _, _ := procGetCurrentThreadId.Call()
 
 	if fgThread != 0 && curThread != 0 && fgThread != curThread {
 		_, _, _ = procAttachThreadInput.Call(fgThread, curThread, 1)
 		defer procAttachThreadInput.Call(fgThread, curThread, 0)
 	}
+	if winThread != 0 && curThread != 0 && winThread != curThread {
+		_, _, _ = procAttachThreadInput.Call(curThread, winThread, 1)
+		defer procAttachThreadInput.Call(curThread, winThread, 0)
+	}
+	if fgThread != 0 && winThread != 0 && fgThread != winThread {
+		_, _, _ = procAttachThreadInput.Call(fgThread, winThread, 1)
+		defer procAttachThreadInput.Call(fgThread, winThread, 0)
+	}
+
+	// Unlock Windows foreground lock policy when triggered from background hotkey thread
+	_, _, _ = procKeybdEvent.Call(0, 0, 0, 0)
 
 	iconic, _, _ := procIsIconic.Call(hwnd)
 	if iconic != 0 {
@@ -208,6 +225,28 @@ func ForceForegroundWindow(windowTitle string) {
 
 	_, _, _ = procBringWindowToTop.Call(hwnd)
 	_, _, _ = procSetForegroundWindow.Call(hwnd)
+	_, _, _ = procSetActiveWindow.Call(hwnd)
+	_, _, _ = procSetFocus.Call(hwnd)
+
+	// Walk down into WebView2 child windows (Chrome_WidgetWin_0 / Chrome_WidgetWin_1)
+	// and grant keyboard focus directly to the deepest child control.
+	const gwChild = 5
+	child := hwnd
+	for depth := 0; depth < 5; depth++ {
+		next, _, _ := procGetWindow.Call(child, uintptr(gwChild))
+		if next == 0 {
+			break
+		}
+		child = next
+		childThread, _, _ := procGetWindowThreadProcessId.Call(child, 0)
+		if childThread != 0 && childThread != curThread {
+			_, _, _ = procAttachThreadInput.Call(curThread, childThread, 1)
+			_, _, _ = procSetFocus.Call(child)
+			_, _, _ = procAttachThreadInput.Call(curThread, childThread, 0)
+		} else {
+			_, _, _ = procSetFocus.Call(child)
+		}
+	}
 }
 
 // PinTopMostWindow positions and sizes a window at exact screen coordinates as always-on-top
