@@ -1,0 +1,190 @@
+package system
+
+import (
+	"context"
+	"fmt"
+	"math"
+	"sync"
+	"time"
+
+	"github.com/shirou/gopsutil/v3/cpu"
+	"github.com/shirou/gopsutil/v3/mem"
+	psnet "github.com/shirou/gopsutil/v3/net"
+	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
+)
+
+// Stats holds real-time telemetry for CPU, RAM, Network I/O, and Clock.
+type Stats struct {
+	CPUPercent  float64 `json:"cpuPercent"`
+	RAMPercent  float64 `json:"ramPercent"`
+	RAMUsedMB   uint64  `json:"ramUsedMB"`
+	RAMTotalMB  uint64  `json:"ramTotalMB"`
+	NetDownKB   float64 `json:"netDownKB"`
+	NetUpKB     float64 `json:"netUpKB"`
+	NetDownText string  `json:"netDownText"`
+	NetUpText   string  `json:"netUpText"`
+	ClockText   string  `json:"clockText"`
+	Timestamp   int64   `json:"timestamp"`
+}
+
+// Monitor manages the decoupled background goroutine that polls system metrics.
+type Monitor struct {
+	ctx           context.Context
+	interval      time.Duration
+	stopCh        chan struct{}
+	mu            sync.RWMutex
+	lastStats     Stats
+	lastBytesRecv uint64
+	lastBytesSent uint64
+	lastNetSample time.Time
+	running       bool
+}
+
+// NewMonitor creates an instance of the system resource monitor.
+func NewMonitor(interval time.Duration) *Monitor {
+	if interval <= 0 {
+		interval = 1200 * time.Millisecond
+	}
+	return &Monitor{
+		interval: interval,
+		stopCh:   make(chan struct{}),
+	}
+}
+
+// Start launches the decoupled goroutine with a time.Ticker.
+func (m *Monitor) Start(ctx context.Context) {
+	m.mu.Lock()
+	if m.running {
+		m.mu.Unlock()
+		return
+	}
+	m.ctx = ctx
+	m.running = true
+	m.stopCh = make(chan struct{})
+
+	// Warm-up initial network counters
+	if ioCounters, err := psnet.IOCounters(false); err == nil && len(ioCounters) > 0 {
+		m.lastBytesRecv = ioCounters[0].BytesRecv
+		m.lastBytesSent = ioCounters[0].BytesSent
+		m.lastNetSample = time.Now()
+	}
+	m.mu.Unlock()
+
+	go m.run()
+}
+
+func (m *Monitor) run() {
+	ticker := time.NewTicker(m.interval)
+	defer ticker.Stop()
+
+	m.sampleAndEmit()
+
+	for {
+		select {
+		case <-m.stopCh:
+			return
+		case <-ticker.C:
+			m.sampleAndEmit()
+		}
+	}
+}
+
+func (m *Monitor) sampleAndEmit() {
+	stats := m.Collect()
+
+	m.mu.Lock()
+	m.lastStats = stats
+	m.mu.Unlock()
+
+	if m.ctx != nil {
+		wailsRuntime.EventsEmit(m.ctx, "system:stats", stats)
+	}
+}
+
+// Collect reads the instant hardware and network metrics.
+func (m *Monitor) Collect() Stats {
+	// 1. CPU Percentage
+	var cpuVal float64
+	cpuPercentages, err := cpu.Percent(0, false)
+	if err == nil && len(cpuPercentages) > 0 {
+		cpuVal = math.Round(cpuPercentages[0]*10) / 10
+	}
+
+	// 2. RAM Usage
+	var ramPercent float64
+	var ramUsedMB, ramTotalMB uint64
+	vMem, err := mem.VirtualMemory()
+	if err == nil {
+		ramPercent = math.Round(vMem.UsedPercent*10) / 10
+		ramUsedMB = vMem.Used / (1024 * 1024)
+		ramTotalMB = vMem.Total / (1024 * 1024)
+	}
+
+	// 3. Network I/O Speed
+	var netDownKB, netUpKB float64
+	now := time.Now()
+	ioCounters, err := psnet.IOCounters(false)
+
+	m.mu.Lock()
+	if err == nil && len(ioCounters) > 0 && !m.lastNetSample.IsZero() {
+		elapsed := now.Sub(m.lastNetSample).Seconds()
+		if elapsed > 0 {
+			curRecv := ioCounters[0].BytesRecv
+			curSent := ioCounters[0].BytesSent
+
+			if curRecv >= m.lastBytesRecv {
+				netDownKB = float64(curRecv-m.lastBytesRecv) / (1024.0 * elapsed)
+			}
+			if curSent >= m.lastBytesSent {
+				netUpKB = float64(curSent-m.lastBytesSent) / (1024.0 * elapsed)
+			}
+
+			m.lastBytesRecv = curRecv
+			m.lastBytesSent = curSent
+		}
+	}
+	m.lastNetSample = now
+	m.mu.Unlock()
+
+	return Stats{
+		CPUPercent:  cpuVal,
+		RAMPercent:  ramPercent,
+		RAMUsedMB:   ramUsedMB,
+		RAMTotalMB:  ramTotalMB,
+		NetDownKB:   math.Round(netDownKB*10) / 10,
+		NetUpKB:     math.Round(netUpKB*10) / 10,
+		NetDownText: formatSpeed(netDownKB),
+		NetUpText:   formatSpeed(netUpKB),
+		ClockText:   now.Format("15:04:05"),
+		Timestamp:   now.Unix(),
+	}
+}
+
+func formatSpeed(kbPerSec float64) string {
+	if kbPerSec < 0.1 {
+		return "0 KB/s"
+	}
+	if kbPerSec < 1000 {
+		return fmt.Sprintf("%.0f KB/s", kbPerSec)
+	}
+	mbPerSec := kbPerSec / 1024.0
+	return fmt.Sprintf("%.1f MB/s", mbPerSec)
+}
+
+// GetLastStats returns the most recently collected system metrics.
+func (m *Monitor) GetLastStats() Stats {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.lastStats
+}
+
+// Stop cleanly terminates the background monitoring ticker.
+func (m *Monitor) Stop() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !m.running {
+		return
+	}
+	close(m.stopCh)
+	m.running = false
+}

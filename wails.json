@@ -1,0 +1,20 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "omnifloat",
+  "outputfilename": "omnifloat",
+  "frontend:install": "",
+  "frontend:build": "",
+  "frontend:dev:watcher": "",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "rac-developer",
+    "email": "developer@omnifloat.local"
+  },
+  "info": {
+    "companyName": "OmniFloat",
+    "productName": "OmniFloat",
+    "productVersion": "1.0.0",
+    "copyright": "Copyright 2026",
+    "comments": "Minimalist Glassmorphism Floating Launcher"
+  }
+}

@@ -1,0 +1,17 @@
+# Compiled binaries and build artifacts
+build/bin/
+*.exe
+*.dll
+*.so
+*.dylib
+*.syso
+
+# Frontend build / node_modules
+frontend/node_modules/
+frontend/dist/
+
+# IDE & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

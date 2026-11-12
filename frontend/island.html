@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OmniFloat Island</title>
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="stylesheet" href="src/style.css">
+</head>
+<body>
+  <div class="island-container">
+    <div class="glass-backdrop-layer" id="island-backdrop-layer">
+      <div class="glass-backdrop-img" id="island-backdrop-img"></div>
+      <div class="glass-backdrop-tint"></div>
+    </div>
+    <div class="island-hud no-drag" id="island-hud">
+      
+      <div class="island-left no-drag">
+        <div class="pulse-indicator"></div>
+        
+        <div class="island-widgets">
+          
+          <!-- CPU Widget -->
+          <div class="widget-chip" id="chip-cpu">
+            <span>CPU</span>
+            <span class="widget-val" id="island-cpu">0%</span>
+          </div>
+
+          <!-- RAM Widget -->
+          <div class="widget-chip" id="chip-ram">
+            <span>RAM</span>
+            <span class="widget-val" id="island-ram">0%</span>
+          </div>
+
+          <!-- Internet Network Widget -->
+          <div class="widget-chip" id="chip-net">
+            <div class="net-rates">
+              <span class="net-down" id="island-net-down" title="Velocidad de descarga">↓ 0 KB/s</span>
+              <span class="net-up" id="island-net-up" title="Velocidad de subida">↑ 0 KB/s</span>
+            </div>
+          </div>
+
+          <!-- Digital Clock Widget -->
+          <div class="widget-chip" id="chip-clock">
+            <span class="clock-val" id="island-clock">00:00:00</span>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Action: Open Centered Launcher (Hidden by default, configurable in Settings) -->
+      <button class="island-btn no-drag hidden" id="btn-island-search" title="Abrir Buscador Centrado (Alt+Espacio)">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <span>Buscar</span>
+      </button>
+
+    </div>
+
+    <!-- Island Right-Click Context Menu -->
+    <div class="island-context-menu" id="island-context-menu">
+      <div class="ctx-header">Posición en Pantalla</div>
+      <button class="ctx-item" id="ctx-pos-bottom-right">
+        <span class="ctx-icon">↘️</span>
+        <span class="ctx-label">Inferior Derecha</span>
+        <span class="ctx-check" id="check-bottom-right">✓</span>
+      </button>
+      <button class="ctx-item" id="ctx-pos-bottom-left">
+        <span class="ctx-icon">↙️</span>
+        <span class="ctx-label">Inferior Izquierda</span>
+        <span class="ctx-check" id="check-bottom-left"></span>
+      </button>
+      <div class="ctx-divider"></div>
+      <button class="ctx-item" id="ctx-open-launcher">
+        <span class="ctx-icon">🔍</span>
+        <span class="ctx-label">Abrir Buscador</span>
+        <span class="ctx-badge">Alt+Espacio</span>
+      </button>
+      <button class="ctx-item" id="ctx-open-settings">
+        <span class="ctx-icon">⚙️</span>
+        <span class="ctx-label">Configuración...</span>
+      </button>
+      <div class="ctx-divider"></div>
+      <button class="ctx-item ctx-danger" id="ctx-hide-island">
+        <span class="ctx-icon">❌</span>
+        <span class="ctx-label">Ocultar Isla</span>
+      </button>
+    </div>
+
+  </div>
+
+  <script src="src/island.js"></script>
+</body>
+</html>
