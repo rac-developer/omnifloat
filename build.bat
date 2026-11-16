@@ -1,5 +1,7 @@
 @echo off
 echo Building OmniFloat for Windows (native Glassmorphism launcher)...
+set GOOS=windows
+set GOARCH=amd64
 go build -tags desktop,production -ldflags "-H windowsgui -s -w" -o build\bin\omnifloat.exe .
 if %errorlevel% neq 0 (
     echo [ERROR] Build failed.
